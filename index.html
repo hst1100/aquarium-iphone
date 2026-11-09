@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#04263e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Aquarium">
+<title>Mein Aquarium</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#05283d;color:white;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;touch-action:none}canvas{display:block;width:100vw;height:100dvh}#controls{position:fixed;inset:auto 14px max(20px,env(safe-area-inset-bottom)) 14px;display:flex;justify-content:center;gap:8px;z-index:3;transition:opacity .3s}button{background:rgba(2,30,49,.72);color:#e2f8ff;border:1px solid rgba(173,236,255,.45);border-radius:999px;padding:13px 17px;font-weight:600;font-size:14px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}button:active{background:rgba(37,135,183,.8)}#hint{position:fixed;top:max(21px,env(safe-area-inset-top));width:100%;text-align:center;color:#d2f4ffad;font-size:13px;letter-spacing:.3px;pointer-events:none;text-shadow:0 1px 5px #013b5f}#info{position:fixed;top:calc(max(21px,env(safe-area-inset-top)) + 28px);left:10%;right:10%;font-size:12px;line-height:1.35;text-align:center;color:#d4f7ff;pointer-events:none}#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:4;background:#001b30b5;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}#overlay[hidden]{display:none}#panel{border:1px solid #ffffff35;background:#08354ddc;border-radius:22px;padding:23px;max-width:330px;margin:20px;text-align:center;box-shadow:0 16px 60px #0007}#panel h2{margin:4px 0 12px;font-size:23px}#panel p{line-height:1.5;font-size:14px;color:#d5f1f8}
+</style>
+</head>
+<body>
+<canvas id="water"></canvas>
+<div id="hint">AQUARIUM · von oben</div><div id="info">Mit dem Finger Wellen erzeugen · Für Bewegungen Sensor aktivieren</div>
+<div id="controls"><button id="sensor">Bewegung aktivieren</button><button id="bubbles">Blasen: Mittel</button><button id="hide">Vollbild</button></div>
+<div id="overlay" hidden><div id="panel"><h2>🫧 Aquarium</h2><p id="message"></p><button id="close">Verstanden</button></div></div>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('water'),ctx=canvas.getContext('2d',{alpha:false});
+const sensorBtn=document.getElementById('sensor'),bubbleBtn=document.getElementById('bubbles'),hideBtn=document.getElementById('hide'),overlay=document.getElementById('overlay'),msg=document.getElementById('message');
+let W=1,H=1,DPR=1,t=0,last=0,fx=0,fy=0,targetX=0,targetY=0,shake=0,sensorOn=false,hideControls=false;
+let count=42,bubbles=[],ripples=[],light=[],waveX=0,waveY=0,velX=0,velY=0,lastMotion=0;
+const rand=(a,b)=>a+Math.random()*(b-a);const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const perfReduced=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);light=Array.from({length:9},(_,i)=>({x:rand(0,W),y:rand(0,H),r:rand(70,170),phase:rand(0,6.28)}));if(!bubbles.length)reseed();}
+function makeBubble(){let r=rand(4,14);if(Math.random()<.18)r=rand(15,25);return{x:rand(r,W-r),y:rand(r,H-r),r,vx:rand(-.15,.15),vy:rand(-.15,.15),depth:rand(.2,1),phase:rand(0,6.3)}}
+function reseed(){bubbles=Array.from({length:count},makeBubble)}
+function showMessage(text){msg.textContent=text;overlay.hidden=false}
+document.getElementById('close').addEventListener('click',()=>overlay.hidden=true);
+function ripple(x,y,strength=1){ripples.push({x,y,r:2,age:0,s:clamp(strength,.35,2)});if(ripples.length>22)ripples.shift()}
+let touch=null;canvas.addEventListener('pointerdown',e=>{touch={x:e.clientX,y:e.clientY};ripple(touch.x,touch.y,1.5);});canvas.addEventListener('pointermove',e=>{if(!touch)return;const dx=e.clientX-touch.x,dy=e.clientY-touch.y;targetX=clamp(targetX+dx*.16,-11,11);targetY=clamp(targetY+dy*.16,-11,11);shake=clamp(shake+Math.hypot(dx,dy)*.012,0,6);if(Math.hypot(dx,dy)>7)ripple(e.clientX,e.clientY,.6);touch={x:e.clientX,y:e.clientY}});canvas.addEventListener('pointerup',()=>touch=null);
+function orientation(e){if(e.gamma==null||e.beta==null)return;targetX=clamp(e.gamma*.17,-12,12);targetY=clamp(e.beta*.11,-12,12);}
+function motion(e){let a=e.acceleration||e.accelerationIncludingGravity;if(!a)return;const now=performance.now();if(now-lastMotion<35)return;lastMotion=now;const ax=a.x||0,ay=a.y||0;shake=clamp(shake+Math.max(0,Math.hypot(ax,ay)-2.5)*.022,0,7);if(!('DeviceOrientationEvent' in window)) {targetX=clamp(-ax*1.5,-12,12);targetY=clamp(ay*1.5,-12,12)}}
+async function startSensors(){try{let ok=true;if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){ok=(await DeviceOrientationEvent.requestPermission())==='granted'}if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){let p=await DeviceMotionEvent.requestPermission();if(p!=='granted'&&!ok)ok=false}if(!ok){showMessage('Die Sensorfreigabe wurde nicht erteilt. Du kannst das Wasser trotzdem mit dem Finger bewegen.');return;}window.addEventListener('deviceorientation',orientation);window.addEventListener('devicemotion',motion);sensorOn=true;sensorBtn.textContent='Sensor aktiv';document.getElementById('info').textContent='iPhone kippen oder schütteln · Mit dem Finger Wellen erzeugen';if(!window.isSecureContext){showMessage('Für Bewegungssensoren benötigt Safari normalerweise eine sichere HTTPS-Webadresse. Die Fingersteuerung funktioniert weiterhin.')}}catch(e){showMessage('Safari konnte die Bewegungssensoren nicht freigeben. Öffne die App über eine HTTPS-Adresse in Safari und tippe erneut auf „Bewegung aktivieren“.')}}
+sensorBtn.addEventListener('click',startSensors);
+const levels=[18,42,80,130];let level=1;bubbleBtn.addEventListener('click',()=>{level=(level+1)%levels.length;count=levels[level];bubbleBtn.textContent='Blasen: '+['Wenig','Mittel','Viele','Sehr viele'][level];reseed()});
+hideBtn.addEventListener('click',()=>{hideControls=!hideControls;document.getElementById('controls').style.opacity=hideControls?'0':'1';document.getElementById('controls').style.pointerEvents=hideControls?'none':'auto';document.getElementById('hint').style.opacity=hideControls?'0':'1';document.getElementById('info').style.opacity=hideControls?'0':'1';if(hideControls){setTimeout(()=>{canvas.addEventListener('pointerdown',restore,{once:true})},200)} });
+function restore(){if(!hideControls)return;hideControls=false;document.getElementById('controls').style.opacity='1';document.getElementById('controls').style.pointerEvents='auto';document.getElementById('hint').style.opacity='1';document.getElementById('info').style.opacity='1';}
+function background(){const grad=ctx.createLinearGradient(0,0,W,H);grad.addColorStop(0,'#026492');grad.addColorStop(.3,'#087cb0');grad.addColorStop(.65,'#04517f');grad.addColorStop(1,'#052c51');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+// Surface caustics: gently drifting, translucent light pools.
+ctx.save();ctx.globalCompositeOperation='screen';for(let i=0;i<light.length;i++){let l=light[i],x=l.x+Math.sin(t*.00024+l.phase)*45+waveX*1.8,y=l.y+Math.cos(t*.00019+l.phase)*45+waveY*1.8,r=l.r;let g=ctx.createRadialGradient(x,y,1,x,y,r);g.addColorStop(0,'rgba(64,229,255,.115)');g.addColorStop(.45,'rgba(20,188,235,.06)');g.addColorStop(1,'rgba(20,188,235,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}ctx.restore();
+// Caustic refraction stripes; follow simulated inertia.
+ctx.save();ctx.lineWidth=1.4;for(let i=0;i<12;i++){const y=H*(i+.4)/12;ctx.beginPath();for(let x=-8;x<=W+8;x+=12){const yy=y+Math.sin(x*.021+t*.0013+i*.8)*7+Math.sin(x*.038-t*.001+i)*3+waveY*.8; if(x===-8)ctx.moveTo(x+waveX*.5,yy);else ctx.lineTo(x+waveX*.5,yy)}ctx.strokeStyle=i%3===0?'rgba(150,244,255,.115)':'rgba(142,221,248,.048)';ctx.stroke()}ctx.restore();
+let shade=ctx.createRadialGradient(W*.46,H*.39,Math.min(W,H)*.18,W*.5,H*.5,Math.max(W,H)*.75);shade.addColorStop(0,'rgba(0,0,0,0)');shade.addColorStop(.7,'rgba(0,8,37,.06)');shade.addColorStop(1,'rgba(0,8,32,.52)');ctx.fillStyle=shade;ctx.fillRect(0,0,W,H);
+// Edge of glass enclosure.
+ctx.strokeStyle='rgba(168,247,255,.2)';ctx.lineWidth=4;ctx.strokeRect(3,3,W-6,H-6);ctx.strokeStyle='rgba(4,26,47,.55)';ctx.lineWidth=8;ctx.strokeRect(8,8,W-16,H-16);
+}
+function drawRipples(dt){ripples=ripples.filter(r=>r.age<1.6);for(let r of ripples){r.age+=dt;r.r+=dt*(115+shake*7);for(let j=0;j<2;j++){let alpha=.22*(1-r.age/1.6)*(j? .52:1);ctx.beginPath();ctx.ellipse(r.x+waveX*.5,r.y+waveY*.5,r.r-j*10,Math.max(2,(r.r-j*10)*.78),0,0,6.283);ctx.strokeStyle=`rgba(187,248,255,${Math.max(0,alpha)})`;ctx.lineWidth=j?1:2;ctx.stroke()}}}
+function drawBubble(b){const r=b.r;let x=b.x,y=b.y;const halo=ctx.createRadialGradient(x-r*.28,y-r*.35,0,x,y,r*1.8);halo.addColorStop(0,'rgba(255,255,255,.07)');halo.addColorStop(.64,'rgba(107,222,255,.015)');halo.addColorStop(1,'rgba(30,187,255,0)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(x,y,r*1.8,0,6.283);ctx.fill();
+const fill=ctx.createRadialGradient(x-r*.42,y-r*.48,r*.1,x+r*.16,y+r*.12,r*1.22);fill.addColorStop(0,'rgba(230,254,255,.58)');fill.addColorStop(.27,'rgba(129,225,252,.2)');fill.addColorStop(.61,'rgba(4,74,129,.13)');fill.addColorStop(.83,'rgba(4,46,96,.24)');fill.addColorStop(1,'rgba(212,250,255,.74)');ctx.fillStyle=fill;ctx.beginPath();ctx.arc(x,y,r,0,6.283);ctx.fill();ctx.strokeStyle='rgba(216,250,255,.65)';ctx.lineWidth=Math.max(.8,r*.095);ctx.beginPath();ctx.arc(x,y,r*.91,.15,Math.PI*1.72);ctx.stroke();ctx.fillStyle='rgba(255,255,255,.85)';ctx.beginPath();ctx.ellipse(x-r*.31,y-r*.43,r*.24,r*.13,-.6,0,6.283);ctx.fill();}
+function frame(now){let dt=Math.min(.04,(now-(last||now))/1000);last=now;t=now;let ease=dt*4.6;velX+=(targetX-waveX)*ease;velY+=(targetY-waveY)*ease;velX*=Math.pow(.81,dt*60);velY*=Math.pow(.81,dt*60);waveX+=velX;waveY+=velY;targetX*=Math.pow(.991,dt*60);targetY*=Math.pow(.991,dt*60);shake*=Math.pow(.965,dt*60);
+background();drawRipples(dt);
+const motionFactor=perfReduced?.3:1;
+for(const b of bubbles){let k=dt*60;const drag=Math.pow(.94, k);b.vx=(b.vx+(waveX*.008+velX*.15)*k*motionFactor+Math.sin(t*.0009+b.phase)*.0015*k)*drag;b.vy=(b.vy+(waveY*.008+velY*.15)*k*motionFactor+Math.cos(t*.001+b.phase)*.0015*k)*drag;b.x+=b.vx*k;b.y+=b.vy*k;let r=b.r+4;if(b.x<r){b.x=r;b.vx=Math.abs(b.vx)*.63}else if(b.x>W-r){b.x=W-r;b.vx=-Math.abs(b.vx)*.63}if(b.y<r){b.y=r;b.vy=Math.abs(b.vy)*.63}else if(b.y>H-r){b.y=H-r;b.vy=-Math.abs(b.vy)*.63}drawBubble(b)}
+requestAnimationFrame(frame)}
+window.addEventListener('resize',resize);document.addEventListener('visibilitychange',()=>{last=0});resize();requestAnimationFrame(frame);
+})();
+</script></body></html>
